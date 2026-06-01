@@ -17,19 +17,26 @@ export async function connectDB(): Promise<Db> {
 	}
 
 	try {
+		console.log("Attempting to connect to MongoDB...");
 		client = new MongoClient(mongoUrl!);
 		await client.connect();
-		db = client.db();
-		console.log("Connected to MongoDB");
+		
+		db = client.db("taskdb");
+		
+		await db.admin().ping();
+		console.log("✅ Connected to MongoDB successfully");
 
-		// Create indexes
 		const tasksCollection = db.collection("tasks");
 		await tasksCollection.createIndex({ userId: 1 });
 		await tasksCollection.createIndex({ createdAt: -1 });
+		
+		const groupsCollection = db.collection("groups");
+		await groupsCollection.createIndex({ userId: 1 });
 
 		return db;
 	} catch (error) {
-		console.error("Failed to connect to MongoDB:", error);
+		console.error("❌ Failed to connect to MongoDB:", error);
+		console.error("MongoDB URI:", mongoUrl?.substring(0, 50) + "...");
 		process.exit(1);
 	}
 }

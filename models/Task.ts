@@ -6,21 +6,28 @@ export interface Task {
 	userId: string;
 	content: string;
 	status: "pending" | "completed";
+	groupId?: ObjectId | null;
 	createdAt: Date;
 	updatedAt: Date;
 }
 
 export async function getTasksCollection() {
 	const db = getDB();
-	return db.collection<Task>("tasks");
+	const collection = db.collection<Task>("tasks");
+
+	await collection.createIndex({ userId: 1, createdAt: -1 });
+	await collection.createIndex({ userId: 1, groupId: 1 });
+	await collection.createIndex({ userId: 1, status: 1 });
+	return collection;
 }
 
-export async function createTask(userId: string, content: string): Promise<Task> {
+export async function createTask(userId: string, content: string, groupId: ObjectId | null = null): Promise<Task> {
 	const collection = await getTasksCollection();
 	const task: Omit<Task, "_id"> = {
 		userId,
 		content,
 		status: "pending",
+		groupId,
 		createdAt: new Date(),
 		updatedAt: new Date(),
 	};
@@ -35,15 +42,10 @@ export async function updateTaskStatus(taskId: ObjectId, status: "pending" | "co
 		{ $set: { status, updatedAt: new Date() } },
 		{ returnDocument: "after" }
 	);
-	return result as Task | null;
+	return result as unknown as Task | null;
 }
 
-export async function getUserTasks(userId: string): Promise<Task[]> {
-	const collection = await getTasksCollection();
-	return collection.find({ userId }).toArray();
-}
-
-export async function getTodaysTasks(userId: string): Promise<Task[]> {
+export async function getTasks(userId: string): Promise<Task[]> {
 	const collection = await getTasksCollection();
 	const today = new Date();
 	today.setHours(0, 0, 0, 0);
@@ -53,8 +55,13 @@ export async function getTodaysTasks(userId: string): Promise<Task[]> {
 	return collection
 		.find({
 			userId,
-			createdAt: { $gte: today, $lt: tomorrow },
+			$or: [
+				{ createdAt: { $gte: today, $lt: tomorrow } },
+				{ createdAt: { $lt: today }, status: "pending" },
+				{ updatedAt: { $gte: today }, status: "completed" },
+			],
 		})
+		.sort({ createdAt: 1, updatedAt: 1 })
 		.toArray();
 }
 
@@ -62,4 +69,13 @@ export async function deleteTask(taskId: ObjectId): Promise<boolean> {
 	const collection = await getTasksCollection();
 	const result = await collection.deleteOne({ _id: taskId });
 	return result.deletedCount > 0;
+}
+
+export async function clearTasksGroup(groupId: ObjectId): Promise<number> {
+	const collection = await getTasksCollection();
+	const result = await collection.updateMany(
+		{ groupId },
+		{ $set: { groupId: null, updatedAt: new Date() } }
+	);
+	return result.modifiedCount;
 }
