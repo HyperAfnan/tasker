@@ -1,0 +1,12 @@
+node_modules
+.git
+.gitignore
+.env
+.env.*
+tests
+*.md
+.gemini
+brain
+coverage
+*.log
+.DS_Store

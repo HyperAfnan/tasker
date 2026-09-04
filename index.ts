@@ -37,11 +37,19 @@ async function init() {
     }
   }
 
-  process.on('SIGINT', async () => {
-    console.log('Shutting down gracefully...');
-    await disconnectDB();
+  const shutdown = async (signal: string) => {
+    console.log(`Received ${signal}. Shutting down gracefully...`);
+    try {
+      await disconnectDB();
+      client.destroy();
+    } catch (err) {
+      console.error('Error during shutdown:', err);
+    }
     process.exit(0);
-  });
+  };
+
+  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
 
   await client.login(token);
 }
