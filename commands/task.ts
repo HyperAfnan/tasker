@@ -8,7 +8,7 @@ import {
   updateTaskContent,
   getTaskById,
 } from '../models/Task';
-import { getGroups, getGroupByName } from '../models/Group';
+import { getGroups, getGroupByName, getOrCreateDefaultGroup, DEFAULT_GROUP_NAME } from '../models/Group';
 import { embedder } from '../utils/embed';
 
 async function resolveTask(taskInput: string, userId: string): Promise<any | null> {
@@ -57,8 +57,8 @@ export default {
         .addStringOption((option) =>
           option
             .setName('group')
-            .setDescription('The group name for this task')
-            .setRequired(true)
+            .setDescription('The group name for this task (optional, defaults to "Default")')
+            .setRequired(false)
             .setAutocomplete(true)
         )
     )
@@ -118,11 +118,15 @@ export default {
       try {
         const groups = await getGroups(userId);
         const query = focusedOption.value?.toLowerCase() ?? '';
-        const filtered = groups
-          .filter((g) => g.groupName.toLowerCase().includes(query))
+        const groupNames = groups.map((g) => g.groupName);
+        if (!groupNames.some((name) => name.toLowerCase() === DEFAULT_GROUP_NAME.toLowerCase())) {
+          groupNames.unshift(DEFAULT_GROUP_NAME);
+        }
+        const filtered = groupNames
+          .filter((name) => name.toLowerCase().includes(query))
           .slice(0, 25);
         await interaction.respond(
-          filtered.map((g) => ({ name: g.groupName, value: g.groupName }))
+          filtered.map((name) => ({ name, value: name }))
         );
       } catch (err) {
         console.error('Task group autocomplete error:', err);
@@ -170,32 +174,38 @@ export default {
       const taskContent = interaction.options.getString('content')?.trim();
       const groupName = interaction.options.getString('group')?.trim();
 
-      if (!taskContent || !groupName) {
+      if (!taskContent) {
         await interaction.reply({
-          embeds: [embedder('⚠️ Please specify both **content** and a **group**.', undefined, '#ff0000')],
+          embeds: [embedder('⚠️ Please specify **content** for the task.', undefined, '#ff0000')],
           flags: MessageFlags.Ephemeral,
         });
         return;
       }
 
-      const group = await getGroupByName(userId, groupName);
-      if (!group || !group._id) {
-        await interaction.reply({
-          embeds: [
-            embedder(
-              `Group "${groupName}" does not exist. Create it with \`/group create name:${groupName}\``,
-              undefined,
-              '#ff0000'
-            ),
-          ],
-          flags: MessageFlags.Ephemeral,
-        });
-        return;
+      let targetGroup;
+      if (!groupName || groupName.toLowerCase() === DEFAULT_GROUP_NAME.toLowerCase()) {
+        targetGroup = await getOrCreateDefaultGroup(userId);
+      } else {
+        const existingGroup = await getGroupByName(userId, groupName);
+        if (!existingGroup || !existingGroup._id) {
+          await interaction.reply({
+            embeds: [
+              embedder(
+                `Group "${groupName}" does not exist. Create it with \`/group create name:${groupName}\``,
+                undefined,
+                '#ff0000'
+              ),
+            ],
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+        targetGroup = existingGroup;
       }
 
-      await createTask(userId, taskContent, group._id);
+      await createTask(userId, taskContent, targetGroup._id!);
       await interaction.reply({
-        embeds: [embedder(`Task added to **${groupName}**: **${taskContent}**`, undefined, '#00ff00')],
+        embeds: [embedder(`Task added to **${targetGroup.groupName}**: **${taskContent}**`, undefined, '#00ff00')],
       });
     } else if (subcommand === 'list') {
       const tasks = await getTasks(userId);
@@ -325,21 +335,28 @@ export default {
   async execute(message: any, args: string[]) {
     const subcommand = args[1]?.toLowerCase();
     if (subcommand === 'add') {
-      const groupName = args[2];
-      const taskContent = args.slice(3).join(' ');
-      if (!groupName || !taskContent) {
-        await message.reply({ embeds: [embedder("Usage: `'task add [group_name] [task_content]`", undefined, '#ff0000')] });
+      if (args.length < 3) {
+        await message.reply({ embeds: [embedder("Usage: `'task add [task_content]` or `'task add [group_name] [task_content]`", undefined, '#ff0000')] });
         return;
       }
 
-      const group = await getGroupByName(message.author.id, groupName);
-      if (!group || !group._id) {
-        await message.reply({ embeds: [embedder(`Group "${groupName}" does not exist. Create it with \'group create ${groupName}\'`, undefined, '#ff0000')] });
-        return;
+      let targetGroup;
+      let taskContent = '';
+
+      const potentialGroupName = args[2]!;
+      const isDefault = potentialGroupName.toLowerCase() === DEFAULT_GROUP_NAME.toLowerCase();
+      const existingGroup = isDefault ? null : await getGroupByName(message.author.id, potentialGroupName);
+
+      if ((existingGroup || isDefault) && args.length > 3) {
+        targetGroup = existingGroup || (await getOrCreateDefaultGroup(message.author.id));
+        taskContent = args.slice(3).join(' ');
+      } else {
+        targetGroup = await getOrCreateDefaultGroup(message.author.id);
+        taskContent = args.slice(2).join(' ');
       }
 
-      await createTask(message.author.id, taskContent, group._id);
-      await message.reply({ embeds: [embedder(`Task added to **${groupName}**: **${taskContent}**`, undefined, '#00ff00')] });
+      await createTask(message.author.id, taskContent, targetGroup._id!);
+      await message.reply({ embeds: [embedder(`Task added to **${targetGroup.groupName}**: **${taskContent}**`, undefined, '#00ff00')] });
     } else if (subcommand === 'list' || subcommand === 'show') {
       const tasks = await getTasks(message.author.id);
       const groups = await getGroups(message.author.id);

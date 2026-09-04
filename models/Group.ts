@@ -31,9 +31,27 @@ export async function getGroups(userId: string): Promise<Group[]> {
 	return collection.find({ userId }).sort({ createdAt: -1 }).toArray();
 }
 
+export const DEFAULT_GROUP_NAME = 'Default';
+
+function escapeRegex(str: string): string {
+	return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 export async function getGroupByName(userId: string, groupName: string): Promise<Group | null> {
+	if (!groupName) return null;
 	const collection = await getGroupsCollection();
-	return collection.findOne({ userId, groupName });
+	return collection.findOne({
+		userId,
+		groupName: { $regex: new RegExp(`^${escapeRegex(groupName)}$`, "i") },
+	});
+}
+
+export async function getOrCreateDefaultGroup(userId: string): Promise<Group> {
+	const existing = await getGroupByName(userId, DEFAULT_GROUP_NAME);
+	if (existing && existing._id) {
+		return existing;
+	}
+	return createGroup(userId, DEFAULT_GROUP_NAME);
 }
 
 export async function getGroupById(groupId: ObjectId): Promise<Group | null> {
@@ -48,8 +66,12 @@ export async function deleteGroup(groupId: ObjectId): Promise<boolean> {
 }
 
 export async function groupExists(userId: string, groupName: string): Promise<boolean> {
+	if (!groupName) return false;
 	const collection = await getGroupsCollection();
-	const group = await collection.findOne({ userId, groupName });
+	const group = await collection.findOne({
+		userId,
+		groupName: { $regex: new RegExp(`^${escapeRegex(groupName)}$`, "i") },
+	});
 	return group !== null;
 }
 

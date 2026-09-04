@@ -1,13 +1,24 @@
 import { describe, expect, it, mock } from 'bun:test';
 
 mock.module('../models/Group', () => ({
-  createGroup: mock(async (userId: string, groupName: string) => ({ userId, groupName })),
+  createGroup: mock(async (userId: string, groupName: string) => ({ userId, groupName, _id: { toHexString: () => '123' } })),
   getGroups: mock(async (_userId: string) => [{ groupName: 'Projects', _id: { toHexString: () => '123' } }]),
   deleteGroup: mock(async (_id: any) => true),
   groupExists: mock(async (_userId: string, _groupName: string) => false),
-  getGroupByName: mock(async (_userId: string, groupName: string) => ({ _id: { toHexString: () => '123' }, groupName })),
+  getGroupByName: mock(async (_userId: string, groupName: string) => {
+    if (groupName.toLowerCase() === 'projects') {
+      return { _id: { toHexString: () => '123' }, groupName: 'Projects' };
+    }
+    return null;
+  }),
   getGroupById: mock(async (id: any) => ({ _id: id, groupName: 'Projects' })),
   updateGroupName: mock(async (_userId: string, _oldName: string, _newName: string) => true),
+  DEFAULT_GROUP_NAME: 'Default',
+  getOrCreateDefaultGroup: mock(async (userId: string) => ({
+    _id: { toHexString: () => 'default-id-123' },
+    userId,
+    groupName: 'Default',
+  })),
 }));
 
 mock.module('../models/Task', () => ({
@@ -95,7 +106,7 @@ describe('Task Slash Command Structure & Data', () => {
     expect(addSub.options?.[0]?.name).toBe('content');
     expect(addSub.options?.[0]?.required).toBe(true);
     expect(addSub.options?.[1]?.name).toBe('group');
-    expect(addSub.options?.[1]?.required).toBe(true);
+    expect(Boolean(addSub.options?.[1]?.required)).toBe(false);
     expect(addSub.options?.[1]?.autocomplete).toBe(true);
 
     // /task list has NO options
@@ -267,6 +278,73 @@ describe('Slash Command Execution (group & task)', () => {
     await taskCommand.executeSlash(mockInteraction);
     expect(mockInteraction.reply).toHaveBeenCalledTimes(1);
     expect(replyPayload.embeds).toBeDefined();
+  });
+
+  it('should execute /task add without group option and use Default group', async () => {
+    let replyPayload: any = null;
+    const mockInteraction = {
+      user: { id: 'test-user-1', displayName: 'Tester' },
+      options: {
+        getSubcommand: () => 'add',
+        getString: (opt: string) => (opt === 'content' ? 'Buy milk' : null),
+      },
+      reply: mock(async (payload: any) => {
+        replyPayload = payload;
+      }),
+    };
+
+    await taskCommand.executeSlash(mockInteraction);
+    expect(mockInteraction.reply).toHaveBeenCalledTimes(1);
+    expect(replyPayload.embeds).toBeDefined();
+    expect(replyPayload.embeds[0].data.description).toContain('Default');
+    expect(replyPayload.embeds[0].data.description).toContain('Buy milk');
+  });
+
+  it('should execute prefix task add with no group and use Default group', async () => {
+    let replyPayload: any = null;
+    const mockMessage = {
+      author: { id: 'test-user-1', displayName: 'Tester' },
+      reply: mock(async (payload: any) => {
+        replyPayload = payload;
+      }),
+    };
+
+    await taskCommand.execute(mockMessage, ["'task", 'add', 'Buy', 'eggs', 'and', 'bread']);
+    expect(mockMessage.reply).toHaveBeenCalledTimes(1);
+    expect(replyPayload.embeds).toBeDefined();
+    expect(replyPayload.embeds[0].data.description).toContain('Default');
+    expect(replyPayload.embeds[0].data.description).toContain('Buy eggs and bread');
+  });
+
+  it('should execute prefix task add with existing group and use specified group', async () => {
+    let replyPayload: any = null;
+    const mockMessage = {
+      author: { id: 'test-user-1', displayName: 'Tester' },
+      reply: mock(async (payload: any) => {
+        replyPayload = payload;
+      }),
+    };
+
+    await taskCommand.execute(mockMessage, ["'task", 'add', 'Projects', 'Write', 'unit', 'tests']);
+    expect(mockMessage.reply).toHaveBeenCalledTimes(1);
+    expect(replyPayload.embeds).toBeDefined();
+    expect(replyPayload.embeds[0].data.description).toContain('Projects');
+    expect(replyPayload.embeds[0].data.description).toContain('Write unit tests');
+  });
+
+  it('should reply with usage when prefix task add has no arguments', async () => {
+    let replyPayload: any = null;
+    const mockMessage = {
+      author: { id: 'test-user-1', displayName: 'Tester' },
+      reply: mock(async (payload: any) => {
+        replyPayload = payload;
+      }),
+    };
+
+    await taskCommand.execute(mockMessage, ["'task", 'add']);
+    expect(mockMessage.reply).toHaveBeenCalledTimes(1);
+    expect(replyPayload.embeds).toBeDefined();
+    expect(replyPayload.embeds[0].data.description).toContain('Usage');
   });
 
   it('should execute /task list with no parameters', async () => {

@@ -22,9 +22,9 @@ export function buildHelpEmbed(category: string = 'all', userDisplayName?: strin
           "Tasks are organized into groups (e.g., Work, Study, Personal):\n" +
           "> `/group create name:Projects` *(or `'group create Projects`)*\n\n" +
           "**2️⃣ Add Your Tasks**\n" +
-          "Enter task content first, then select or type the group (numbering is automatic):\n" +
-          "> `/task add content:Complete report group:Projects` *(or `'task add Projects Complete report`)*\n" +
-          "> `/task add content:Review PR group:Projects` *(or `'task add Projects Review PR`)*\n\n" +
+          "Enter task content (group is optional, defaults to **Default**):\n" +
+          "> `/task add content:Complete report` *(or with group: `group:Projects`)*\n" +
+          "> `'task add Complete report` *(or with group: `'task add Projects Complete report`)*\n\n" +
           "**3️⃣ View Today's Tasks**\n" +
           "Check your organized daily to-do list (no parameters needed):\n" +
           "> `/task list` *(or `'task list`)*\n\n" +
@@ -47,9 +47,9 @@ export function buildHelpEmbed(category: string = 'all', userDisplayName?: strin
           {
             name: '➕ Add Task: `/task add`',
             value:
-              'Adds a new task. First input is task content, followed by group (numbering is automatic):\n' +
-              '• **Slash:** `/task add content:Finish quarterly report group:Work`\n' +
-              "• **Prefix:** `'task add Work Finish quarterly report`",
+              'Adds a new task. The group is optional and defaults to **Default**:\n' +
+              '• **Slash:** `/task add content:Finish report` *(or with group: `group:Work`)*\n' +
+              "• **Prefix:** `'task add Finish report` *(or with group: `'task add Work Finish report`)*",
           },
           {
             name: '📋 List Tasks: `/task list`',
@@ -170,7 +170,7 @@ export function buildHelpEmbed(category: string = 'all', userDisplayName?: strin
           {
             name: '📝 Task Operations (`/task`)',
             value:
-              "• `/task add content:... group:...` *(or `'task add`)* - Add a task\n" +
+              "• `/task add content:... [group:...]` *(or `'task add [task]` / `'task add [group] [task]`)* - Add a task\n" +
               "• `/task list` *(or `'task list`)* - View today's checklist (no parameters)\n" +
               "• `/task done task:...` *(or `'task done`)* - Mark task completed via autocomplete\n" +
               "• `/task rename task:... new_content:...` *(or `'task rename`)* - Rename task\n" +
