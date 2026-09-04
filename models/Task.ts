@@ -79,3 +79,28 @@ export async function clearTasksGroup(groupId: ObjectId): Promise<number> {
 	);
 	return result.modifiedCount;
 }
+
+export async function updateTaskContent(
+	taskId: ObjectId,
+	content: string,
+	groupId?: ObjectId | null
+): Promise<Task | null> {
+	const collection = await getTasksCollection();
+	const updateFields: any = { content, updatedAt: new Date() };
+	if (groupId !== undefined) {
+		updateFields.groupId = groupId;
+	}
+	const result = await collection.findOneAndUpdate(
+		{ _id: taskId },
+		{ $set: updateFields },
+		{ returnDocument: "after" }
+	);
+	return result as unknown as Task | null;
+}
+
+export async function getTaskById(taskId: ObjectId): Promise<Task | null> {
+	const collection = await getTasksCollection();
+	return collection.findOne({ _id: taskId });
+}
+
+

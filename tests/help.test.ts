@@ -1,4 +1,5 @@
 import { describe, expect, it, mock } from 'bun:test';
+import { MessageFlags } from 'discord.js';
 import helpCommand, { buildHelpEmbed, buildSelectRow } from '../commands/help';
 import pingCommand from '../commands/ping';
 import interactionCreateEvent from '../events/interactionCreate';
@@ -74,7 +75,7 @@ describe('Help Embed Generator', () => {
     expect(json.description).toContain('Create a Category');
     expect(json.description).toContain('Add Your Tasks');
     expect(json.description).toContain("View Today's Tasks");
-    expect(json.description).toContain('Mark Completed or Remove');
+    expect(json.description).toContain('Mark Completed, Rename, or Remove');
   });
 
   it('should generate detailed task commands embed', () => {
@@ -82,11 +83,12 @@ describe('Help Embed Generator', () => {
     const json = embed.toJSON();
 
     expect(json.title).toContain('Task Management Commands');
-    expect(json.fields?.length).toBe(4);
+    expect(json.fields?.length).toBe(5);
     const fieldNames = json.fields?.map((f) => f.name) ?? [];
     expect(fieldNames.some((n) => n.includes('Add Task'))).toBe(true);
     expect(fieldNames.some((n) => n.includes('List Tasks'))).toBe(true);
     expect(fieldNames.some((n) => n.includes('Mark Done'))).toBe(true);
+    expect(fieldNames.some((n) => n.includes('Rename Task'))).toBe(true);
     expect(fieldNames.some((n) => n.includes('Remove Task'))).toBe(true);
   });
 
@@ -95,10 +97,11 @@ describe('Help Embed Generator', () => {
     const json = embed.toJSON();
 
     expect(json.title).toContain('Group Management Commands');
-    expect(json.fields?.length).toBe(3);
+    expect(json.fields?.length).toBe(4);
     const fieldNames = json.fields?.map((f) => f.name) ?? [];
     expect(fieldNames.some((n) => n.includes('Create Group'))).toBe(true);
     expect(fieldNames.some((n) => n.includes('List Groups'))).toBe(true);
+    expect(fieldNames.some((n) => n.includes('Rename Group'))).toBe(true);
     expect(fieldNames.some((n) => n.includes('Delete Group'))).toBe(true);
   });
 
@@ -162,7 +165,7 @@ describe('Execution Handlers (Prefix & Slash)', () => {
     expect(replyPayload.components.length).toBe(1);
   });
 
-  it('should execute slash help command and reply with fetchReply: true', async () => {
+  it('should execute slash help command and reply with withResponse: true', async () => {
     let replyPayload: any = null;
     const mockInteraction = {
       user: { id: 'user123', displayName: 'Afnan' },
@@ -172,16 +175,20 @@ describe('Execution Handlers (Prefix & Slash)', () => {
       reply: mock(async (payload: any) => {
         replyPayload = payload;
         return {
-          createMessageComponentCollector: mock(() => ({
-            on: mock(() => {}),
-          })),
+          resource: {
+            message: {
+              createMessageComponentCollector: mock(() => ({
+                on: mock(() => {}),
+              })),
+            },
+          },
         };
       }),
     };
 
     await helpCommand.executeSlash(mockInteraction);
     expect(mockInteraction.reply).toHaveBeenCalledTimes(1);
-    expect(replyPayload.fetchReply).toBe(true);
+    expect(replyPayload.withResponse).toBe(true);
     expect(replyPayload.embeds[0].data.title).toContain('Task Management Commands');
   });
 });
@@ -239,7 +246,7 @@ describe('Interaction Event Handler', () => {
 
     await interactionCreateEvent.execute(mockInteraction as any, { client: mockClient });
     expect(replyMock).toHaveBeenCalledTimes(1);
-    expect((replyMock.mock.calls as any)[0]?.[0]?.ephemeral).toBe(true);
+    expect((replyMock.mock.calls as any)[0]?.[0]?.flags).toBe(MessageFlags.Ephemeral);
   });
 });
 

@@ -14,20 +14,33 @@ export async function registerSlashCommands(client: any) {
 
   if (slashCommands.length === 0) return [];
 
-  const guildId = process.env.GUILD_ID;
+  const guildId = process.env.GUILD_ID?.trim();
+  let registeredToTargetGuild = false;
+
   if (guildId) {
-    const guild = client.guilds?.cache?.get(guildId);
-    if (guild) {
-      await guild.commands.set(slashCommands);
-      console.log(`Registered ${slashCommands.length} slash commands to guild ${guildId}`);
-      return slashCommands;
+    try {
+      const guild =
+        client.guilds?.cache?.get(guildId) ?? (await client.guilds?.fetch?.(guildId).catch(() => null));
+      if (guild) {
+        await guild.commands.set(slashCommands);
+        console.log(`✅ Registered ${slashCommands.length} slash commands to guild ${guild.name ?? guildId} (${guildId})`);
+        registeredToTargetGuild = true;
+      } else {
+        console.warn(`⚠️ Guild ${guildId} not found. Ensure the bot is invited to this server.`);
+      }
+    } catch (err) {
+      console.error(`❌ Failed to register commands to guild ${guildId}:`, err);
     }
-    console.warn(`Guild ${guildId} not found in cache. Falling back to global registration.`);
   }
 
+
   if (client.application?.commands) {
-    await client.application.commands.set(slashCommands);
-    console.log(`Registered ${slashCommands.length} global slash commands.`);
+    try {
+      await client.application.commands.set(slashCommands);
+      console.log(`🌐 Registered ${slashCommands.length} global slash commands.`);
+    } catch (err) {
+      console.error('Failed to register global slash commands:', err);
+    }
   }
 
   return slashCommands;
@@ -37,7 +50,7 @@ export default {
   name: Events.ClientReady,
   once: true,
   async execute(client: any, context?: any) {
-    console.log(`Logged in as ${client.user.tag}`);
+    console.log(`Logged in as ${client.user.tag} (ID: ${client.user.id})`);
     await connectDB();
 
     try {

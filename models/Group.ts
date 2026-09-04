@@ -52,3 +52,13 @@ export async function groupExists(userId: string, groupName: string): Promise<bo
 	const group = await collection.findOne({ userId, groupName });
 	return group !== null;
 }
+
+export async function updateGroupName(userId: string, oldName: string, newName: string): Promise<boolean> {
+	const collection = await getGroupsCollection();
+	const result = await collection.updateOne(
+		{ userId, groupName: oldName },
+		{ $set: { groupName: newName, updatedAt: new Date() } }
+	);
+	return result.modifiedCount > 0;
+}
+

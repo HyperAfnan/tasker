@@ -2,6 +2,7 @@ import {
   ActionRowBuilder,
   ComponentType,
   EmbedBuilder,
+  MessageFlags,
   SlashCommandBuilder,
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
@@ -17,21 +18,21 @@ export function buildHelpEmbed(category: string = 'all', userDisplayName?: strin
         .setColor('#2ECC71')
         .setDescription(
           `Welcome${userDisplayName ? ` **${userDisplayName}**` : ''}! Organizing your day with Tasker is quick and simple. Follow these 4 steps:\n\n` +
-          `**1️⃣ Create a Category / Group**\n` +
-          `Tasks are organized into groups (e.g., Work, Study, Personal):\n` +
-          `> \`'group create Projects\` or \`/group create [name]\`\n\n` +
-          `**2️⃣ Add Your Tasks**\n` +
-          `Add tasks under your newly created group:\n` +
-          `> \`'task add Projects Complete report\`\n` +
-          `> \`'task add Projects Review pull request\`\n\n` +
-          `**3️⃣ View Today's Tasks**\n` +
-          `Check your organized daily to-do list:\n` +
-          `> \`'task list\` (or \`'task show\`)\n\n` +
-          `**4️⃣ Mark Completed or Remove**\n` +
-          `Mark tasks as completed (✅) using their task number from the list:\n` +
-          `> \`'task done 1\`\n` +
-          `Or remove a task once it's done:\n` +
-          `> \`'task remove 1\``
+          "**1️⃣ Create a Category / Group**\n" +
+          "Tasks are organized into groups (e.g., Work, Study, Personal):\n" +
+          "> `/group create name:Projects` *(or `'group create Projects`)*\n\n" +
+          "**2️⃣ Add Your Tasks**\n" +
+          "Enter task content first, then select or type the group (numbering is automatic):\n" +
+          "> `/task add content:Complete report group:Projects` *(or `'task add Projects Complete report`)*\n" +
+          "> `/task add content:Review PR group:Projects` *(or `'task add Projects Review PR`)*\n\n" +
+          "**3️⃣ View Today's Tasks**\n" +
+          "Check your organized daily to-do list (no parameters needed):\n" +
+          "> `/task list` *(or `'task list`)*\n\n" +
+          "**4️⃣ Mark Completed, Rename, or Remove**\n" +
+          "Inline autocomplete lets you select tasks directly in the command bar:\n" +
+          "> `/task done task:[select task]` *(or `'task done 1`)* - Mark completed\n" +
+          "> `/task rename task:[select task] new_content:New text` *(or `'task rename 1 New text`)* - Rename task\n" +
+          "> `/task remove task:[select task]` *(or `'task remove 1`)* - Remove task"
         )
         .setFooter({ text: "Tip: Both slash commands (/) and prefix (') are supported!" })
         .setTimestamp();
@@ -41,26 +42,45 @@ export function buildHelpEmbed(category: string = 'all', userDisplayName?: strin
       return new EmbedBuilder()
         .setTitle('📝 Task Management Commands')
         .setColor('#3498DB')
-        .setDescription('Create, track, and complete your tasks with these commands:')
+        .setDescription('Create, track, and complete your tasks with `/task`:')
         .addFields(
           {
-            name: "➕ Add Task: `task add [group] [content]`",
-            value: "Adds a new task to a specified group.\n*Example:* `'task add Work Complete quarterly report`",
+            name: '➕ Add Task: `/task add`',
+            value:
+              'Adds a new task. First input is task content, followed by group (numbering is automatic):\n' +
+              '• **Slash:** `/task add content:Finish quarterly report group:Work`\n' +
+              "• **Prefix:** `'task add Work Finish quarterly report`",
           },
           {
-            name: "📋 List Tasks: `task list` or `task show`",
-            value: "Displays all your tasks for today grouped by category, with completion status (`✅` or `[  ]`).\n*Example:* `'task list`",
+            name: '📋 List Tasks: `/task list`',
+            value:
+              "Displays all your tasks for today grouped by category. Accepts no parameters:\n" +
+              '• **Slash:** `/task list`\n' +
+              "• **Prefix:** `'task list` (or `'task show`)",
           },
           {
-            name: "✅ Mark Done: `task done [number]`",
-            value: "Marks a task as completed based on its index from `'task list`.\n*Example:* `'task done 2`",
+            name: '✅ Mark Done: `/task done`',
+            value:
+              'Marks a task as completed with instant task autocompletion:\n' +
+              '• **Slash:** `/task done task:[select task]`\n' +
+              "• **Prefix:** `'task done 2`",
           },
           {
-            name: "🗑️ Remove Task: `task remove [number]`",
-            value: "Permanently removes a task from your list.\n*Example:* `'task remove 2`",
+            name: '✏️ Rename Task: `/task rename`',
+            value:
+              'Renames an existing task with task autocompletion and new content:\n' +
+              '• **Slash:** `/task rename task:[select task] new_content:New title`\n' +
+              "• **Prefix:** `'task rename 2 New title` (or `'task update 2 New title`)",
+          },
+          {
+            name: '🗑️ Remove Task: `/task remove`',
+            value:
+              'Permanently removes a task with instant task autocompletion:\n' +
+              '• **Slash:** `/task remove task:[select task]`\n' +
+              "• **Prefix:** `'task remove 2`",
           }
         )
-        .setFooter({ text: "Use prefix ' or slash / commands" })
+        .setFooter({ text: "Use slash / commands or prefix '" })
         .setTimestamp();
 
     case 'groups':
@@ -68,22 +88,38 @@ export function buildHelpEmbed(category: string = 'all', userDisplayName?: strin
       return new EmbedBuilder()
         .setTitle('📁 Group Management Commands')
         .setColor('#E67E22')
-        .setDescription('Groups help you categorize and keep your tasks organized:')
+        .setDescription('Groups help you categorize and keep your tasks organized with `/group`:')
         .addFields(
           {
-            name: "📁 Create Group: `group create [name]`",
-            value: "Creates a new category for tasks.\n*Example:* `'group create Personal`",
+            name: '📁 Create Group: `/group create`',
+            value:
+              'Creates a new category for tasks:\n' +
+              '• **Slash:** `/group create name:Personal`\n' +
+              "• **Prefix:** `'group create Personal`",
           },
           {
-            name: "📄 List Groups: `group list`",
-            value: "Lists all categories you currently have created.\n*Example:* `'group list`",
+            name: '📄 List Groups: `/group list`',
+            value:
+              'Lists all categories you currently have created. Accepts no parameters:\n' +
+              '• **Slash:** `/group list`\n' +
+              "• **Prefix:** `'group list`",
           },
           {
-            name: "❌ Delete Group: `group delete [name]`",
-            value: "Deletes a group and clears all tasks assigned to it.\n*Example:* `'group delete Personal`",
+            name: '✏️ Rename Group: `/group rename`',
+            value:
+              'Renames an existing category:\n' +
+              '• **Slash:** `/group rename name:OldProjects new_name:NewProjects`\n' +
+              "• **Prefix:** `'group rename OldProjects NewProjects`",
+          },
+          {
+            name: '❌ Delete Group: `/group delete`',
+            value:
+              'Deletes a category and clears all tasks assigned to it:\n' +
+              '• **Slash:** `/group delete name:Personal`\n' +
+              "• **Prefix:** `'group delete Personal`",
           }
         )
-        .setFooter({ text: "Use prefix ' or slash / commands" })
+        .setFooter({ text: "Use slash / commands or prefix '" })
         .setTimestamp();
 
     case 'general':
@@ -95,15 +131,21 @@ export function buildHelpEmbed(category: string = 'all', userDisplayName?: strin
         .setDescription('General bot utilities and information:')
         .addFields(
           {
-            name: "❓ Help Menu: `/help` or `'help`",
-            value: "Displays the help menu, command directory, and quick start guide.\n*Usage:* `/help [category]` or `'help [category]`",
+            name: '❓ Help Menu: `/help`',
+            value:
+              'Displays the help menu, command directory, and quick start guide.\n' +
+              '• **Slash:** `/help [category]`\n' +
+              "• **Prefix:** `'help [category]`",
           },
           {
-            name: "🏓 Ping: `/ping` or `'ping`",
-            value: "Replies with Pong to check bot responsiveness.\n*Usage:* `/ping` or `'ping`",
+            name: '🏓 Ping: `/ping`',
+            value:
+              'Replies with Pong to check bot responsiveness.\n' +
+              '• **Slash:** `/ping`\n' +
+              "• **Prefix:** `'ping`",
           }
         )
-        .setFooter({ text: "Use prefix ' or slash / commands" })
+        .setFooter({ text: "Use slash / commands or prefix '" })
         .setTimestamp();
 
     case 'all':
@@ -113,38 +155,40 @@ export function buildHelpEmbed(category: string = 'all', userDisplayName?: strin
         .setColor('#3498DB')
         .setDescription(
           `Welcome${userDisplayName ? ` **${userDisplayName}**` : ''} to **Tasker**! Your personal task & productivity manager on Discord.\n\n` +
-          `Commands can be used via **Slash Commands** (\`/help\`) or the text prefix **\`'\`** (\`'help\`).\n` +
+          `Tasker supports native **Slash Commands** (\`/task\`, \`/group\`, etc.) as well as text prefix **\`'\`** commands (\`'task\`, etc.).\n` +
           `Use the dropdown menu below to view specific guides and detailed command syntax.`
         )
         .addFields(
           {
             name: '🚀 Quick Start (4 Steps)',
             value:
-              "1. `'group create [name]` - Create a task category\n" +
-              "2. `'task add [group] [task]` - Add a task\n" +
-              "3. `'task list` - View your checklist\n" +
-              "4. `'task done [number]` - Mark task completed",
+              "1. `/group create` *(or `'group create`)* - Create a category\n" +
+              "2. `/task add` *(or `'task add`)* - Add a task\n" +
+              "3. `/task list` *(or `'task list`)* - View your checklist\n" +
+              "4. `/task done` *(or `'task done`)* - Mark task completed",
           },
           {
-            name: '📝 Task Operations (`task`)',
+            name: '📝 Task Operations (`/task`)',
             value:
-              "• `'task add [group] [content]` - Add task to group\n" +
-              "• `'task list` / `'task show` - View today's checklist\n" +
-              "• `'task done [number]` - Mark task completed\n" +
-              "• `'task remove [number]` - Delete a task",
+              "• `/task add content:... group:...` *(or `'task add`)* - Add a task\n" +
+              "• `/task list` *(or `'task list`)* - View today's checklist (no parameters)\n" +
+              "• `/task done task:...` *(or `'task done`)* - Mark task completed via autocomplete\n" +
+              "• `/task rename task:... new_content:...` *(or `'task rename`)* - Rename task\n" +
+              "• `/task remove task:...` *(or `'task remove`)* - Remove task via autocomplete",
           },
           {
-            name: '📁 Group Operations (`group`)',
+            name: '📁 Group Operations (`/group`)',
             value:
-              "• `'group create [name]` - Create a category\n" +
-              "• `'group list` - List all your categories\n" +
-              "• `'group delete [name]` - Delete category & its tasks",
+              "• `/group create name:...` *(or `'group create`)* - Create a category\n" +
+              "• `/group list` *(or `'group list`)* - List categories (no parameters)\n" +
+              "• `/group rename name:... new_name:...` *(or `'group rename`)* - Rename category\n" +
+              "• `/group delete name:...` *(or `'group delete`)* - Delete category & tasks",
           },
           {
-            name: '⚙️ Utilities (`ping`, `help`)',
+            name: '⚙️ Utilities (`/ping`, `/help`)',
             value:
-              "• `'help` or `/help` - Open this help menu\n" +
-              "• `'ping` or `/ping` - Check bot status",
+              "• `/help` (or `'help`) - Open this help menu\n" +
+              "• `/ping` (or `'ping`) - Check bot status",
           }
         )
         .setFooter({ text: 'Select an option from the menu below for more details!' })
@@ -209,7 +253,7 @@ export function setupHelpCollector(replyMessage: any, authorId: string) {
     if (i.user.id !== authorId) {
       await i.reply({
         content: 'This help menu was requested by someone else. Use `/help` to open your own menu!',
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
       return;
     }
@@ -276,9 +320,12 @@ export default {
     const response = await interaction.reply({
       embeds: [embed],
       components: [row],
-      fetchReply: true,
+      withResponse: true,
     });
 
-    setupHelpCollector(response, interaction.user?.id);
+    const replyMessage =
+      response?.resource?.message ??
+      (response?.createMessageComponentCollector ? response : await interaction.fetchReply?.());
+    setupHelpCollector(replyMessage, interaction.user?.id);
   },
 };

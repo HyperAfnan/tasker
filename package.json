@@ -6,7 +6,10 @@
   "scripts": {
     "start": "bun run index.ts",
     "dev": "bun --watch index.ts ",
-    "test": "bun test"
+    "test": "bun test",
+    "deploy": "bun run scripts/deploy-commands.ts",
+    "deploy:global": "bun run scripts/deploy-commands.ts --global",
+    "deploy:clear": "bun run scripts/deploy-commands.ts --clear"
   },
   "devDependencies": {
     "@types/bun": "latest"
