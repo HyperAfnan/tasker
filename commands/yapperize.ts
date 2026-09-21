@@ -7,10 +7,10 @@ import { formatSummaryEmbed, generateSummary } from '../utils/summarizer';
 
 export default {
   name: 'yapperize',
-  description: 'Yapperize and summarize recent channel chatter with Gemini 3.5 Flash',
+  description: 'Summarize recent channel chatter with Gemini',
   data: new SlashCommandBuilder()
     .setName('yapperize')
-    .setDescription('Yapperize and summarize recent channel chatter with Gemini 3.5 Flash')
+    .setDescription('Summarize recent channel chatter with Gemini')
     .addStringOption((option) =>
       option
         .setName('channel')

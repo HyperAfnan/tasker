@@ -8,16 +8,20 @@ import {
   sanitizeMessage,
 } from '../utils/messageFetcher';
 import {
+  DEFAULT_MODEL_CHAIN,
   formatSummaryEmbed,
   getSummaryJsonSchema,
+  isHighDemandError,
+  resolveModelChain,
   SummaryZodSchema,
+  withModelFallback,
 } from '../utils/summarizer';
 
 describe('Yapperize Slash Command Definition', () => {
   it('should export valid command metadata and SlashCommandBuilder with channel autocomplete', () => {
     expect(yapperizeCommand.name).toBe('yapperize');
     expect(yapperizeCommand.description).toBeDefined();
-    expect(yapperizeCommand.description).toContain('Gemini 3.5 Flash');
+    expect(yapperizeCommand.description).toContain('channel chatter');
     expect(yapperizeCommand.data).toBeDefined();
 
     const json = yapperizeCommand.data.toJSON();
@@ -376,7 +380,7 @@ describe('Discord Embed Presentation', () => {
     expect(flowField?.value).toContain('2. Outlined failover steps');
 
     expect(json.footer?.text).toContain('42 messages');
-    expect(json.footer?.text).toContain('Gemini 3.5 Flash');
+    expect(json.footer?.text).not.toContain('Gemini');
   });
 
   it('should safely truncate oversized descriptions and field values', () => {
@@ -553,5 +557,105 @@ describe('Slash Command Interaction Execution & Channel Resolution', () => {
 
     // Should not rethrow or crash
     await yapperizeCommand.executeSlash(mockInteraction);
+  });
+});
+
+describe('Gemini Model Fallback and Retry', () => {
+  const spikeError = () =>
+    Object.assign(
+      new Error(
+        JSON.stringify({
+          error: {
+            code: 503,
+            message:
+              'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.',
+            status: 'UNAVAILABLE',
+          },
+        }),
+      ),
+      { status: 503 },
+    );
+
+  it('resolveModelChain returns the default chain when no override is set', () => {
+    expect(resolveModelChain()).toEqual([
+      'gemini-3.5-flash-lite',
+      'gemini-3.6-flash',
+      'gemini-3.5-flash',
+    ]);
+    expect(resolveModelChain('   ')).toEqual([...DEFAULT_MODEL_CHAIN]);
+  });
+
+  it('resolveModelChain prepends an override and de-duplicates it', () => {
+    expect(resolveModelChain('gemini-custom')).toEqual([
+      'gemini-custom',
+      'gemini-3.5-flash-lite',
+      'gemini-3.6-flash',
+      'gemini-3.5-flash',
+    ]);
+    expect(resolveModelChain('gemini-3.6-flash')).toEqual([
+      'gemini-3.6-flash',
+      'gemini-3.5-flash-lite',
+      'gemini-3.5-flash',
+    ]);
+  });
+
+  it('isHighDemandError detects only 503 / UNAVAILABLE failures', () => {
+    expect(isHighDemandError(spikeError())).toBe(true);
+    expect(isHighDemandError({ status: 503 })).toBe(true);
+    expect(isHighDemandError(new Error('{"error":{"code":503}}'))).toBe(true);
+    expect(isHighDemandError(new Error('boom'))).toBe(false);
+    expect(
+      isHighDemandError(Object.assign(new Error('bad request'), { status: 400 })),
+    ).toBe(false);
+    expect(isHighDemandError(null)).toBe(false);
+  });
+
+  it('withModelFallback advances to the next model on 503 spikes', async () => {
+    const attempted: string[] = [];
+    const { result, model } = await withModelFallback(
+      ['a', 'b', 'c'],
+      async (m: string) => {
+        attempted.push(m);
+        if (m !== 'c') throw spikeError();
+        return 'summary';
+      },
+    );
+
+    expect(attempted).toEqual(['a', 'b', 'c']);
+    expect(model).toBe('c');
+    expect(result).toBe('summary');
+  });
+
+  it('withModelFallback returns the first model when it succeeds', async () => {
+    const attempted: string[] = [];
+    const { model } = await withModelFallback(['a', 'b'], async (m: string) => {
+      attempted.push(m);
+      return 'ok';
+    });
+
+    expect(attempted).toEqual(['a']);
+    expect(model).toBe('a');
+  });
+
+  it('withModelFallback rethrows non-503 errors immediately without retrying', async () => {
+    const attempted: string[] = [];
+    const error = Object.assign(new Error('bad request'), { status: 400 });
+
+    await expect(
+      withModelFallback(['a', 'b', 'c'], async (m: string) => {
+        attempted.push(m);
+        throw error;
+      }),
+    ).rejects.toBe(error);
+
+    expect(attempted).toEqual(['a']);
+  });
+
+  it('withModelFallback throws a friendly error when every model is overloaded', async () => {
+    await expect(
+      withModelFallback(['a', 'b', 'c'], async () => {
+        throw spikeError();
+      }),
+    ).rejects.toThrow(/high demand/i);
   });
 });
