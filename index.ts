@@ -37,9 +37,20 @@ async function init() {
     }
   }
 
+  const port = Number(process.env.PORT) || 3000;
+  const server = Bun.serve({
+    port,
+    hostname: '0.0.0.0',
+    fetch() {
+      return new Response('Tasker bot is running!', { status: 200 });
+    },
+  });
+  console.log(`🌐 Health check server listening on 0.0.0.0:${port}`);
+
   const shutdown = async (signal: string) => {
     console.log(`Received ${signal}. Shutting down gracefully...`);
     try {
+      server.stop();
       await disconnectDB();
       client.destroy();
     } catch (err) {
