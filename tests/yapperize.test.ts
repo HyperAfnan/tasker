@@ -12,9 +12,11 @@ import {
   formatSummaryEmbed,
   getSummaryJsonSchema,
   isHighDemandError,
+  isRateLimitError,
+  resolveApiKeys,
   resolveModelChain,
   SummaryZodSchema,
-  withModelFallback,
+  withFallback,
 } from '../utils/summarizer';
 
 describe('Yapperize Slash Command Definition', () => {
@@ -560,7 +562,7 @@ describe('Slash Command Interaction Execution & Channel Resolution', () => {
   });
 });
 
-describe('Gemini Model Fallback and Retry', () => {
+describe('Gemini Model and API Key Fallback', () => {
   const spikeError = () =>
     Object.assign(
       new Error(
@@ -574,6 +576,21 @@ describe('Gemini Model Fallback and Retry', () => {
         }),
       ),
       { status: 503 },
+    );
+
+  const rateLimitError = () =>
+    Object.assign(
+      new Error(
+        JSON.stringify({
+          error: {
+            code: 429,
+            message:
+              'Quota exceeded for quota metric "Generate Content API requests per minute".',
+            status: 'RESOURCE_EXHAUSTED',
+          },
+        }),
+      ),
+      { status: 429 },
     );
 
   it('resolveModelChain returns the default chain when no override is set', () => {
@@ -610,52 +627,140 @@ describe('Gemini Model Fallback and Retry', () => {
     expect(isHighDemandError(null)).toBe(false);
   });
 
-  it('withModelFallback advances to the next model on 503 spikes', async () => {
+  it('isRateLimitError detects only 429 / RESOURCE_EXHAUSTED failures', () => {
+    expect(isRateLimitError(rateLimitError())).toBe(true);
+    expect(isRateLimitError({ status: 429 })).toBe(true);
+    expect(isRateLimitError(new Error('{"error":{"code":429}}'))).toBe(true);
+    expect(isRateLimitError(spikeError())).toBe(false);
+    expect(
+      isRateLimitError(Object.assign(new Error('bad request'), { status: 400 })),
+    ).toBe(false);
+    expect(isRateLimitError(null)).toBe(false);
+  });
+
+  it('resolveApiKeys collects configured keys in order and de-duplicates them', () => {
+    expect(
+      resolveApiKeys({
+        GEMINI_API_KEY: 'k1',
+        GEMINI_API_KEY_2: 'k2',
+        GEMINI_API_KEY_3: 'k3',
+      }),
+    ).toEqual(['k1', 'k2', 'k3']);
+
+    expect(resolveApiKeys({ GEMINI_API_KEY: 'k1', GEMINI_API_KEY_3: 'k1' })).toEqual([
+      'k1',
+    ]);
+
+    expect(
+      resolveApiKeys({ GEMINI_API_KEY: '  k1  ', GEMINI_API_KEY_2: '   ' }),
+    ).toEqual(['k1']);
+
+    expect(resolveApiKeys({})).toEqual([]);
+  });
+
+  it('withFallback returns the first model and key when the attempt succeeds', async () => {
     const attempted: string[] = [];
-    const { result, model } = await withModelFallback(
+    const { result, model, keyIndex } = await withFallback(
+      ['a', 'b'],
+      ['k1', 'k2'],
+      async (m: string, k: string) => {
+        attempted.push(`${m}:${k}`);
+        return 'ok';
+      },
+    );
+
+    expect(attempted).toEqual(['a:k1']);
+    expect(model).toBe('a');
+    expect(keyIndex).toBe(0);
+    expect(result).toBe('ok');
+  });
+
+  it('withFallback rotates to the next API key on 429', async () => {
+    const attempted: string[] = [];
+    const { result, keyIndex } = await withFallback(
+      ['a'],
+      ['k1', 'k2', 'k3'],
+      async (_m: string, k: string) => {
+        attempted.push(k);
+        if (k === 'k1') throw rateLimitError();
+        return 'summary';
+      },
+    );
+
+    expect(attempted).toEqual(['k1', 'k2']);
+    expect(keyIndex).toBe(1);
+    expect(result).toBe('summary');
+  });
+
+  it('withFallback advances to the next model on 503 while reusing the key', async () => {
+    const attempted: string[] = [];
+    const { model, keyIndex } = await withFallback(
       ['a', 'b', 'c'],
-      async (m: string) => {
-        attempted.push(m);
+      ['k1'],
+      async (m: string, k: string) => {
+        attempted.push(`${m}:${k}`);
         if (m !== 'c') throw spikeError();
         return 'summary';
       },
     );
 
-    expect(attempted).toEqual(['a', 'b', 'c']);
+    expect(attempted).toEqual(['a:k1', 'b:k1', 'c:k1']);
     expect(model).toBe('c');
-    expect(result).toBe('summary');
+    expect(keyIndex).toBe(0);
   });
 
-  it('withModelFallback returns the first model when it succeeds', async () => {
+  it('withFallback exhausts rate-limited keys across models', async () => {
     const attempted: string[] = [];
-    const { model } = await withModelFallback(['a', 'b'], async (m: string) => {
-      attempted.push(m);
-      return 'ok';
-    });
+    const { model, keyIndex } = await withFallback(
+      ['a', 'b'],
+      ['k1', 'k2'],
+      async (m: string, k: string) => {
+        attempted.push(`${m}:${k}`);
+        if (k === 'k1') throw rateLimitError(); // k1 is exhausted globally
+        if (m === 'a') throw spikeError(); // model a overloaded once k2 works
+        return 'summary';
+      },
+    );
 
-    expect(attempted).toEqual(['a']);
-    expect(model).toBe('a');
+    // k1 is never retried for model b
+    expect(attempted).toEqual(['a:k1', 'a:k2', 'b:k2']);
+    expect(model).toBe('b');
+    expect(keyIndex).toBe(1);
   });
 
-  it('withModelFallback rethrows non-503 errors immediately without retrying', async () => {
+  it('withFallback rejects immediately on a non-retryable error', async () => {
     const attempted: string[] = [];
     const error = Object.assign(new Error('bad request'), { status: 400 });
 
     await expect(
-      withModelFallback(['a', 'b', 'c'], async (m: string) => {
-        attempted.push(m);
+      withFallback(['a', 'b', 'c'], ['k1', 'k2'], async (m: string, k: string) => {
+        attempted.push(`${m}:${k}`);
         throw error;
       }),
     ).rejects.toBe(error);
 
-    expect(attempted).toEqual(['a']);
+    expect(attempted).toEqual(['a:k1']);
   });
 
-  it('withModelFallback throws a friendly error when every model is overloaded', async () => {
+  it('withFallback reports rate limiting when every key is exhausted', async () => {
     await expect(
-      withModelFallback(['a', 'b', 'c'], async () => {
+      withFallback(['a', 'b'], ['k1', 'k2'], async () => {
+        throw rateLimitError();
+      }),
+    ).rejects.toThrow(/rate limited/i);
+  });
+
+  it('withFallback reports high demand when every model is overloaded', async () => {
+    await expect(
+      withFallback(['a', 'b', 'c'], ['k1'], async () => {
         throw spikeError();
       }),
     ).rejects.toThrow(/high demand/i);
+  });
+
+  it('withFallback throws when no API keys are configured', async () => {
+    await expect(withFallback(['a'], [], async () => 'ok')).rejects.toThrow(
+      /No Gemini API keys/i,
+    );
   });
 });

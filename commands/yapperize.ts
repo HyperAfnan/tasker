@@ -3,7 +3,11 @@ import {
   SlashCommandBuilder,
 } from 'discord.js';
 import { fetchAndSanitizeMessages } from '../utils/messageFetcher';
-import { formatSummaryEmbed, generateSummary } from '../utils/summarizer';
+import {
+  formatSummaryEmbed,
+  generateSummary,
+  resolveApiKeys,
+} from '../utils/summarizer';
 
 export default {
   name: 'yapperize',
@@ -97,7 +101,7 @@ export default {
     }
 
     try {
-      if (!process.env.GEMINI_API_KEY) {
+      if (resolveApiKeys().length === 0) {
         await interaction.editReply({
           content: '⚠️ **Configuration Error**: `GEMINI_API_KEY` is not configured in the `.env` file. Please set it to enable AI summarization.',
         });

@@ -53,6 +53,25 @@ export function resolveModelChain(envModel?: string): string[] {
   return [override, ...chain.filter((m) => m !== override)];
 }
 
+export const DEFAULT_KEY_VARS = [
+  "GEMINI_API_KEY",
+  "GEMINI_API_KEY_2",
+  "GEMINI_API_KEY_3",
+] as const;
+
+/**
+ * Resolves the ordered, de-duplicated list of configured Gemini API keys.
+ * Accepts an env object for testability.
+ */
+export function resolveApiKeys(
+  env: Record<string, string | undefined> = process.env,
+): string[] {
+  const keys = DEFAULT_KEY_VARS.map((v) => env[v]?.trim()).filter(
+    (k): k is string => Boolean(k),
+  );
+  return [...new Set(keys)];
+}
+
 /**
  * True only for the high-demand 503 / UNAVAILABLE response returned when a
  * model is experiencing a traffic spike.
@@ -67,31 +86,89 @@ export function isHighDemandError(err: unknown): boolean {
 }
 
 /**
- * Runs `attempt` against each model in order, advancing to the next model only
- * when the current one reports a high-demand (503) error. Any other error is
+ * True for a rate-limited (429 / RESOURCE_EXHAUSTED) response, which means the
+ * API key has exhausted its quota.
+ */
+export function isRateLimitError(err: unknown): boolean {
+  if (!err) return false;
+  const status =
+    (err as { status?: number }).status ?? (err as { code?: number }).code;
+  if (status === 429) return true;
+  const message = err instanceof Error ? err.message : String(err);
+  return /"code"\s*:\s*429/.test(message) || /RESOURCE_EXHAUSTED/.test(message);
+}
+
+export interface FallbackOutcome<T> {
+  result: T;
+  model: string;
+  keyIndex: number;
+}
+
+/**
+ * Runs `attempt` across the model chain and API keys. Rate-limited (429) keys
+ * are exhausted for the rest of the request and the next key is tried;
+ * high-demand (503) models advance to the next model. Any other error is
  * rethrown immediately.
  */
-export async function withModelFallback<T>(
+export async function withFallback<T>(
   models: string[],
-  attempt: (model: string) => Promise<T>,
-): Promise<{ result: T; model: string }> {
-  for (let i = 0; i < models.length; i++) {
-    const model = models[i]!;
-    try {
-      const result = await attempt(model);
-      return { result, model };
-    } catch (err) {
-      const isLast = i === models.length - 1;
-      if (!isHighDemandError(err)) throw err;
-      if (isLast) break;
-      console.warn(
-        `[yapperize] Model "${model}" is overloaded (503). Falling back to "${models[i + 1]}"...`,
-      );
-    }
+  apiKeys: string[],
+  attempt: (model: string, apiKey: string) => Promise<T>,
+): Promise<FallbackOutcome<T>> {
+  if (apiKeys.length === 0) {
+    throw new Error("No Gemini API keys are configured in the environment.");
   }
-  throw new Error(
-    "All Gemini models are currently experiencing high demand. Please try again in a moment.",
-  );
+
+  const exhaustedKeys = new Set<number>();
+  let lastErr: unknown;
+
+  for (const model of models) {
+    for (let k = 0; k < apiKeys.length; k++) {
+      if (exhaustedKeys.has(k)) continue;
+      try {
+        const result = await attempt(model, apiKeys[k]!);
+        return { result, model, keyIndex: k };
+      } catch (err) {
+        lastErr = err;
+
+        if (isRateLimitError(err)) {
+          exhaustedKeys.add(k);
+          if (exhaustedKeys.size < apiKeys.length) {
+            console.warn(
+              `[yapperize] API key #${k + 1} rate limited (429). Trying next key...`,
+            );
+          }
+          continue;
+        }
+
+        if (isHighDemandError(err)) {
+          console.warn(
+            `[yapperize] Model "${model}" is overloaded (503). Falling back to next model...`,
+          );
+          break;
+        }
+
+        throw err;
+      }
+    }
+    if (exhaustedKeys.size >= apiKeys.length) break;
+  }
+
+  throw friendlyFallbackError(lastErr);
+}
+
+function friendlyFallbackError(err: unknown): Error {
+  if (isRateLimitError(err)) {
+    return new Error(
+      "All Gemini API keys are currently rate limited. Please try again in a moment.",
+    );
+  }
+  if (isHighDemandError(err)) {
+    return new Error(
+      "All Gemini models are currently experiencing high demand. Please try again in a moment.",
+    );
+  }
+  return new Error("Gemini summarization failed. Please try again later.");
 }
 
 /**
@@ -119,14 +196,15 @@ function parseSummaryResponse(responseText: string | undefined): SummaryResult {
 
 /**
  * Invokes Gemini with structured output enforcement to summarize messages,
- * falling back through the model chain when a model is under high demand.
+ * falling back through the model chain and API keys when a model is under high
+ * demand (503) or a key is rate limited (429).
  */
 export async function generateSummary(
   messages: SanitizedMessage[],
-  apiKey: string = process.env.GEMINI_API_KEY || "",
+  apiKeys: string[] = resolveApiKeys(),
   modelOverride: string | undefined = process.env.GEMINI_MODEL,
 ): Promise<SummaryResult> {
-  if (!apiKey) {
+  if (apiKeys.length === 0) {
     throw new Error("GEMINI_API_KEY is not configured in the environment.");
   }
 
@@ -134,7 +212,6 @@ export async function generateSummary(
     throw new Error("No eligible messages found to summarize.");
   }
 
-  const ai = new GoogleGenAI({ apiKey });
   const schema = getSummaryJsonSchema();
 
   // Format message transcripts for LLM context
@@ -146,7 +223,9 @@ export async function generateSummary(
 
   const models = resolveModelChain(modelOverride);
 
-  const { result } = await withModelFallback(models, async (model) => {
+  const { result } = await withFallback(models, apiKeys, async (model, apiKey) => {
+    const ai = new GoogleGenAI({ apiKey });
+
     const response = await ai.models.generateContent({
       model,
       contents: prompt,
