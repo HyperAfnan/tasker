@@ -1,11 +1,25 @@
 services:
-  bot:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: tasker-bot
-    restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      - NODE_ENV=production
+   postgres:
+      image: postgres:16-alpine
+      container_name: tasker-postgres
+      restart: unless-stopped
+      environment:
+         POSTGRES_USER: ${POSTGRES_USER:-tasker}
+         POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-taskerpassword}
+         POSTGRES_DB: ${POSTGRES_DB:-taskerdb}
+      ports:
+         - "${POSTGRES_PORT:-5432}:5432"
+      volumes:
+         - postgres_data:/var/lib/postgresql/data
+      healthcheck:
+         test:
+            [
+               "CMD-SHELL",
+               "pg_isready -U ${POSTGRES_USER:-tasker} -d ${POSTGRES_DB:-taskerdb}",
+            ]
+         interval: 5s
+         timeout: 5s
+         retries: 5
+
+volumes:
+   postgres_data:

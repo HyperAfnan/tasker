@@ -1,29 +1,49 @@
 {
-  "name": "dc-bot",
-  "module": "index.ts",
-  "type": "module",
-  "private": true,
-  "scripts": {
-    "start": "bun run index.ts",
-    "dev": "bun --watch index.ts ",
-    "test": "bun test",
-    "deploy": "bun run scripts/deploy-commands.ts",
-    "deploy:global": "bun run scripts/deploy-commands.ts --global",
-    "deploy:clear": "bun run scripts/deploy-commands.ts --clear"
-  },
-  "devDependencies": {
-    "@types/bun": "latest"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
-  },
-  "dependencies": {
-    "@google/genai": "^2.21.0",
-    "chrono-node": "^2.10.1",
-    "discord.js": "^14.26.3",
-    "dotenv": "^17.4.2",
-    "mongodb": "^7.2.0",
-    "zod": "^3.24.1",
-    "zod-to-json-schema": "^3.25.2"
-  }
+   "name": "dc-bot",
+   "module": "index.ts",
+   "type": "module",
+   "private": true,
+   "scripts": {
+      "start": "bun run index.ts",
+      "dev": "bun --watch index.ts ",
+      "test": "bun test",
+      "deploy": "bun run scripts/deploy-commands.ts",
+      "deploy:global": "bun run scripts/deploy-commands.ts --global",
+      "deploy:clear": "bun run scripts/deploy-commands.ts --clear",
+      "lint": "eslint . --ext .ts,.js --parser @typescript-eslint/parser",
+      "lint:fix": "eslint . --ext .ts,.js --parser @typescript-eslint/parser --fix",
+      "format:check": "prettier --check .",
+      "format": "prettier --write .",
+      "prepare": "husky"
+   },
+   "devDependencies": {
+      "@types/bun": "latest",
+      "@typescript-eslint/parser": "^8.71.1",
+      "eslint": "^8.57.1",
+      "eslint-config-prettier": "^10.1.8",
+      "husky": "^9.1.7",
+      "lint-staged": "^17.6.0",
+      "prettier": "^3.9.9"
+   },
+   "peerDependencies": {
+      "typescript": "^5"
+   },
+   "dependencies": {
+      "@google/genai": "^2.21.0",
+      "chrono-node": "^2.10.1",
+      "discord.js": "^14.26.3",
+      "dotenv": "^17.4.2",
+      "mongodb": "^7.2.0",
+      "zod": "^3.24.1",
+      "zod-to-json-schema": "^3.25.2"
+   },
+   "lint-staged": {
+      "*.{ts,js}": [
+         "eslint --parser @typescript-eslint/parser",
+         "prettier --check"
+      ],
+      "*.{json,md,yml,yaml}": [
+         "prettier --check"
+      ]
+   }
 }
